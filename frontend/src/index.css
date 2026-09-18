@@ -1,0 +1,97 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: Arial, Helvetica, sans-serif;
+  background-color: #f4f5f7;
+  color: #1f2933;
+}
+
+.container {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+h1 {
+  font-size: 24px;
+  margin-bottom: 16px;
+}
+
+h2 {
+  font-size: 18px;
+  margin-top: 32px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid #d9dee3;
+  padding-bottom: 4px;
+}
+
+.message {
+  background-color: #e5f3ff;
+  border: 1px solid #a9d3f5;
+  padding: 8px 12px;
+  border-radius: 4px;
+  margin-bottom: 16px;
+}
+
+.exchange-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.exchange-list button {
+  padding: 6px 12px;
+  border: 1px solid #ccc;
+  background-color: #fff;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.exchange-list button.active {
+  background-color: #2b6cb0;
+  color: #fff;
+  border-color: #2b6cb0;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  background-color: #fff;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid #e2e8f0;
+  font-size: 14px;
+}
+
+th {
+  background-color: #edf2f7;
+}
+
+input[type='number'] {
+  width: 70px;
+  padding: 4px;
+}
+
+td button {
+  margin-right: 6px;
+  padding: 5px 10px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #fff;
+}
+
+td button:first-of-type {
+  background-color: #2f855a;
+}
+
+td button:last-of-type {
+  background-color: #c53030;
+}

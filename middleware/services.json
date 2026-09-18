@@ -1,0 +1,5 @@
+{
+  "exchanges_service": ["http://exchanges_service:4001"],
+  "prices_service": ["http://prices_service:4002"],
+  "operations_service": ["http://operations_service:4003"]
+}

@@ -1,0 +1,99 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-multi-db.sh:/docker-entrypoint-initdb.d/init-multi-db.sh
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  exchanges_service:
+    build: ./services/exchanges_service
+    environment:
+      DB_HOST: postgres
+      DB_USER: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_NAME: exchanges_db
+      DB_PORT: 5432
+      PORT: 4001
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  prices_service:
+    build: ./services/prices_service
+    environment:
+      DB_HOST: postgres
+      DB_USER: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_NAME: prices_db
+      DB_PORT: 5432
+      PORT: 4002
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  operations_service:
+    build: ./services/operations_service
+    environment:
+      DB_HOST: postgres
+      DB_USER: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_NAME: operations_db
+      DB_PORT: 5432
+      PORT: 4003
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  middleware1:
+    build: ./middleware
+    environment:
+      PORT: 4000
+      SERVICES_FILE: /app/services.json
+    depends_on:
+      - exchanges_service
+      - prices_service
+      - operations_service
+
+  middleware2:
+    build: ./middleware
+    environment:
+      PORT: 4000
+      SERVICES_FILE: /app/services.json
+    depends_on:
+      - exchanges_service
+      - prices_service
+      - operations_service
+
+  loadbalancer:
+    build: ./loadbalancer
+    ports:
+      - "8080:8080"
+    depends_on:
+      - middleware1
+      - middleware2
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: http://localhost:8080
+    ports:
+      - "3000:80"
+    depends_on:
+      - loadbalancer
+
+volumes:
+  postgres_data:
