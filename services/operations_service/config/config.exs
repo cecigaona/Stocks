@@ -22,3 +22,17 @@ config :operations_service, OperationsServiceWeb.Endpoint,
   check_origin: false
 
 config :phoenix, :json_library, Jason
+
+config :operations_service, :consul,
+  enabled: false,
+  host: "localhost",
+  port: 8500,
+  service_name: "operations_service",
+  service_address: "localhost",
+  service_port: 4003,
+  tags: ["backend", "stocks", "operations"],
+  health_path: "/health",
+  health_interval: "10s",
+  health_timeout: "3s",
+  deregister_critical_service_after: "30s",
+  cache_ttl_ms: 3000

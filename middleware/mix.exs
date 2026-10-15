@@ -21,7 +21,8 @@ defmodule Middleware.MixProject do
   defp deps do
     [
       {:plug_cowboy, "~> 2.7"},
-      {:jason, "~> 1.4"}
+      {:jason, "~> 1.4"},
+      {:req, "~> 0.5"}
     ]
   end
 end

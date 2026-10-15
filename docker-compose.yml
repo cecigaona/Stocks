@@ -1,4 +1,17 @@
 services:
+  consul:
+    image: hashicorp/consul:1.19.2
+    container_name: consul
+    restart: unless-stopped
+    command: agent -dev -client=0.0.0.0
+    ports:
+      - "8500:8500"
+    healthcheck:
+      test: ["CMD", "consul", "members"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   postgres:
     image: postgres:16-alpine
     environment:
@@ -25,8 +38,15 @@ services:
       DB_PORT: 5432
       PORT: 4001
       SECRET_KEY_BASE: ${SECRET_KEY_BASE}
+      CONSUL_HOST: consul
+      CONSUL_PORT: 8500
+      SERVICE_NAME: exchanges_service
+      SERVICE_ADDRESS: exchanges_service
+      SERVICE_TAGS: backend,stocks,exchanges
     depends_on:
       postgres:
+        condition: service_healthy
+      consul:
         condition: service_healthy
 
   prices_service:
@@ -39,8 +59,15 @@ services:
       DB_PORT: 5432
       PORT: 4002
       SECRET_KEY_BASE: ${SECRET_KEY_BASE}
+      CONSUL_HOST: consul
+      CONSUL_PORT: 8500
+      SERVICE_NAME: prices_service
+      SERVICE_ADDRESS: prices_service
+      SERVICE_TAGS: backend,stocks,prices
     depends_on:
       postgres:
+        condition: service_healthy
+      consul:
         condition: service_healthy
 
   operations_service:
@@ -53,8 +80,15 @@ services:
       DB_PORT: 5432
       PORT: 4003
       SECRET_KEY_BASE: ${SECRET_KEY_BASE}
+      CONSUL_HOST: consul
+      CONSUL_PORT: 8500
+      SERVICE_NAME: operations_service
+      SERVICE_ADDRESS: operations_service
+      SERVICE_TAGS: backend,stocks,operations
     depends_on:
       postgres:
+        condition: service_healthy
+      consul:
         condition: service_healthy
 
   middleware1:
@@ -62,20 +96,34 @@ services:
     environment:
       PORT: 4000
       SERVICES_FILE: /app/services.json
+      CONSUL_HOST: consul
+      CONSUL_PORT: 8500
     depends_on:
-      - exchanges_service
-      - prices_service
-      - operations_service
+      consul:
+        condition: service_healthy
+      exchanges_service:
+        condition: service_started
+      prices_service:
+        condition: service_started
+      operations_service:
+        condition: service_started
 
   middleware2:
     build: ./middleware
     environment:
       PORT: 4000
       SERVICES_FILE: /app/services.json
+      CONSUL_HOST: consul
+      CONSUL_PORT: 8500
     depends_on:
-      - exchanges_service
-      - prices_service
-      - operations_service
+      consul:
+        condition: service_healthy
+      exchanges_service:
+        condition: service_started
+      prices_service:
+        condition: service_started
+      operations_service:
+        condition: service_started
 
   loadbalancer:
     build: ./loadbalancer

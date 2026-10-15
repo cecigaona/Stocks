@@ -5,6 +5,12 @@ defmodule OperationsServiceWeb.Router do
     plug :accepts, ["json"]
   end
 
+  scope "/", OperationsServiceWeb do
+    pipe_through :api
+
+    get "/health", HealthController, :check
+  end
+
   scope "/api", OperationsServiceWeb do
     pipe_through :api
 

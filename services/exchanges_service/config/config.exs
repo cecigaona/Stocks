@@ -22,3 +22,17 @@ config :exchanges_service, ExchangesServiceWeb.Endpoint,
   check_origin: false
 
 config :phoenix, :json_library, Jason
+
+config :exchanges_service, :consul,
+  enabled: false,
+  host: "localhost",
+  port: 8500,
+  service_name: "exchanges_service",
+  service_address: "localhost",
+  service_port: 4001,
+  tags: ["backend", "stocks"],
+  health_path: "/health",
+  health_interval: "10s",
+  health_timeout: "3s",
+  deregister_critical_service_after: "30s",
+  cache_ttl_ms: 3000

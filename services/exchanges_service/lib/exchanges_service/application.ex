@@ -3,10 +3,23 @@ defmodule ExchangesService.Application do
 
   @impl true
   def start(_type, _args) do
-    children = [
-      ExchangesService.Repo,
-      ExchangesServiceWeb.Endpoint
-    ]
+    consul_config = Application.get_env(:exchanges_service, :consul, [])
+
+    consul_children =
+      if Keyword.get(consul_config, :enabled, true) do
+        [
+          ExchangesService.Consul.Discovery,
+          ExchangesService.Consul.Registrar
+        ]
+      else
+        []
+      end
+
+    children =
+      [
+        ExchangesService.Repo,
+        ExchangesServiceWeb.Endpoint
+      ] ++ consul_children
 
     opts = [strategy: :one_for_one, name: ExchangesService.Supervisor]
     Supervisor.start_link(children, opts)

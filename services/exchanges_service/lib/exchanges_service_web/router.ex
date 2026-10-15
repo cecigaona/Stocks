@@ -5,6 +5,12 @@ defmodule ExchangesServiceWeb.Router do
     plug :accepts, ["json"]
   end
 
+  scope "/", ExchangesServiceWeb do
+    pipe_through :api
+
+    get "/health", HealthController, :check
+  end
+
   scope "/api", ExchangesServiceWeb do
     pipe_through :api
 

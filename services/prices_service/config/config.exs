@@ -22,3 +22,17 @@ config :prices_service, PricesServiceWeb.Endpoint,
   check_origin: false
 
 config :phoenix, :json_library, Jason
+
+config :prices_service, :consul,
+  enabled: false,
+  host: "localhost",
+  port: 8500,
+  service_name: "prices_service",
+  service_address: "localhost",
+  service_port: 4002,
+  tags: ["backend", "stocks", "prices"],
+  health_path: "/health",
+  health_interval: "10s",
+  health_timeout: "3s",
+  deregister_critical_service_after: "30s",
+  cache_ttl_ms: 3000

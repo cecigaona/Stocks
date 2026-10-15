@@ -26,7 +26,9 @@ defmodule ExchangesService.MixProject do
       {:ecto_sql, "~> 3.11"},
       {:postgrex, ">= 0.0.0"},
       {:jason, "~> 1.4"},
-      {:plug_cowboy, "~> 2.7"}
+      {:plug_cowboy, "~> 2.7"},
+      {:req, "~> 0.5"},
+      {:bypass, "~> 2.1", only: :test}
     ]
   end
 

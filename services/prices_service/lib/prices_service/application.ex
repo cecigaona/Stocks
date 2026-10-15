@@ -3,11 +3,24 @@ defmodule PricesService.Application do
 
   @impl true
   def start(_type, _args) do
-    children = [
-      PricesService.Repo,
-      PricesServiceWeb.Endpoint,
-      PricesService.Simulator
-    ]
+    consul_config = Application.get_env(:prices_service, :consul, [])
+
+    consul_children =
+      if Keyword.get(consul_config, :enabled, true) do
+        [
+          PricesService.Consul.Discovery,
+          PricesService.Consul.Registrar
+        ]
+      else
+        []
+      end
+
+    children =
+      [
+        PricesService.Repo,
+        PricesServiceWeb.Endpoint,
+        PricesService.Simulator
+      ] ++ consul_children
 
     opts = [strategy: :one_for_one, name: PricesService.Supervisor]
     Supervisor.start_link(children, opts)

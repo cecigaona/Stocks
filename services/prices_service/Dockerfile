@@ -1,6 +1,6 @@
 FROM elixir:1.17-alpine
 
-RUN apk add --no-cache build-base git bash
+RUN apk add --no-cache build-base git bash curl
 
 WORKDIR /app
 
