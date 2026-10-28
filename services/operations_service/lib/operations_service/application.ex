@@ -18,11 +18,22 @@ defmodule OperationsService.Application do
     children =
       [
         OperationsService.Repo,
-        OperationsServiceWeb.Endpoint
+        OperationsServiceWeb.Endpoint,
+        OperationsService.Messaging.Supervisor,
+        {GRPC.Server.Supervisor,
+         endpoint: OperationsService.Grpc.Endpoint,
+         port: grpc_port(),
+         start_server: true}
       ] ++ consul_children
 
     opts = [strategy: :one_for_one, name: OperationsService.Supervisor]
     Supervisor.start_link(children, opts)
+  end
+
+  defp grpc_port do
+    "GRPC_PORT"
+    |> System.get_env("50053")
+    |> String.to_integer()
   end
 
   @impl true

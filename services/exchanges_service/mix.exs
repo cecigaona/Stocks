@@ -28,6 +28,10 @@ defmodule ExchangesService.MixProject do
       {:jason, "~> 1.4"},
       {:plug_cowboy, "~> 2.7"},
       {:req, "~> 0.5"},
+      {:grpc, "~> 0.9.0"},
+      {:protobuf, "~> 0.12"},
+      {:cowlib, "~> 2.13", override: true},
+      {:gen_stage, "~> 1.2"},
       {:bypass, "~> 2.1", only: :test}
     ]
   end

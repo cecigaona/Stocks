@@ -1,6 +1,8 @@
 defmodule Middleware.Router do
   use Plug.Router
 
+  alias Middleware.Grpc.Client, as: GrpcClient
+
   plug :match
 
   plug Plug.Parsers,
@@ -10,18 +12,142 @@ defmodule Middleware.Router do
 
   plug :dispatch
 
+  get "/api/exchanges" do
+    case GrpcClient.list_exchanges() do
+      {:ok, resp} ->
+        data = Enum.map(resp.exchanges, fn e -> %{id: e.id, name: e.name, code: e.code} end)
+        send_json(conn, 200, %{data: data})
+
+      _ ->
+        dispatch_fallback(conn, "exchanges_service")
+    end
+  end
+
+  get "/api/exchanges/:id/stocks" do
+    case Integer.parse(id) do
+      {exchange_id, ""} ->
+        case GrpcClient.list_stocks_by_exchange(exchange_id) do
+          {:ok, resp} ->
+            data = Enum.map(resp.stocks, &stock_to_map/1)
+            send_json(conn, 200, %{data: data})
+
+          _ ->
+            dispatch_fallback(conn, "exchanges_service")
+        end
+
+      _ ->
+        send_json(conn, 400, %{error: "invalid exchange id"})
+    end
+  end
+
+  get "/api/stocks" do
+    case GrpcClient.list_stocks() do
+      {:ok, resp} ->
+        data = Enum.map(resp.stocks, &stock_to_map/1)
+        send_json(conn, 200, %{data: data})
+
+      _ ->
+        dispatch_fallback(conn, "exchanges_service")
+    end
+  end
+
+  get "/api/prices" do
+    case GrpcClient.list_prices() do
+      {:ok, resp} ->
+        data = Enum.map(resp.prices, &price_to_map/1)
+        send_json(conn, 200, %{data: data})
+
+      _ ->
+        dispatch_fallback(conn, "prices_service")
+    end
+  end
+
+  get "/api/prices/:symbol" do
+    case GrpcClient.get_price(symbol) do
+      {:ok, resp} ->
+        send_json(conn, 200, %{data: price_to_map(resp.price)})
+
+      {:error, %GRPC.RPCError{status: 5}} ->
+        send_json(conn, 404, %{error: "price not found"})
+
+      _ ->
+        dispatch_fallback(conn, "prices_service")
+    end
+  end
+
+  get "/api/operations" do
+    case GrpcClient.list_operations() do
+      {:ok, resp} ->
+        data = Enum.map(resp.operations, &operation_to_map/1)
+        send_json(conn, 200, %{data: data})
+
+      _ ->
+        dispatch_fallback(conn, "operations_service")
+    end
+  end
+
+  post "/api/operations" do
+    case GrpcClient.create_operation(conn.body_params) do
+      {:ok, resp} ->
+        send_json(conn, 201, operation_to_map(resp.operation))
+
+      {:error, %GRPC.RPCError{status: 3, message: msg}} ->
+        send_json(conn, 422, %{error: msg})
+
+      {:error, %GRPC.RPCError{status: 5, message: msg}} ->
+        send_json(conn, 404, %{error: msg})
+
+      _ ->
+        dispatch_fallback(conn, "operations_service")
+    end
+  end
+
+  get "/api/portfolio" do
+    case GrpcClient.get_portfolio() do
+      {:ok, resp} ->
+        data =
+          Enum.map(resp.items, fn item ->
+            %{
+              symbol: item.symbol,
+              quantity: item.quantity,
+              net_invested: item.net_invested
+            }
+          end)
+
+        send_json(conn, 200, %{data: data})
+
+      _ ->
+        dispatch_fallback(conn, "operations_service")
+    end
+  end
+
   match "/api/*_rest" do
-    route(conn)
+    service = service_for(conn.request_path)
+    dispatch_fallback(conn, service)
   end
 
   match _ do
     send_json(conn, 404, %{error: "not found"})
   end
 
-  defp route(conn) do
-    conn.request_path
-    |> service_for()
-    |> dispatch_to_service(conn)
+  defp stock_to_map(s) do
+    %{id: s.id, symbol: s.symbol, name: s.name, exchange_id: s.exchange_id}
+  end
+
+  defp price_to_map(p) do
+    %{id: p.id, symbol: p.symbol, price: p.price, updated_at: p.updated_at}
+  end
+
+  defp operation_to_map(op) do
+    %{
+      id: op.id,
+      symbol: op.symbol,
+      operation_type: op.operation_type,
+      quantity: op.quantity,
+      price: op.price,
+      total: op.total,
+      inserted_at: op.inserted_at
+    }
   end
 
   defp service_for(path) do
@@ -35,11 +161,11 @@ defmodule Middleware.Router do
     end
   end
 
-  defp dispatch_to_service(nil, conn) do
+  defp dispatch_fallback(conn, nil) do
     send_json(conn, 404, %{error: "unknown route"})
   end
 
-  defp dispatch_to_service(service, conn) do
+  defp dispatch_fallback(conn, service) do
     case Middleware.Discovery.next_address(service) do
       {:ok, base_url} -> proxy(conn, base_url)
       {:error, _reason} -> send_json(conn, 502, %{error: "service unavailable"})

@@ -19,11 +19,22 @@ defmodule PricesService.Application do
       [
         PricesService.Repo,
         PricesServiceWeb.Endpoint,
-        PricesService.Simulator
+        PricesService.Simulator,
+        PricesService.Messaging.Supervisor,
+        {GRPC.Server.Supervisor,
+         endpoint: PricesService.Grpc.Endpoint,
+         port: grpc_port(),
+         start_server: true}
       ] ++ consul_children
 
     opts = [strategy: :one_for_one, name: PricesService.Supervisor]
     Supervisor.start_link(children, opts)
+  end
+
+  defp grpc_port do
+    "GRPC_PORT"
+    |> System.get_env("50052")
+    |> String.to_integer()
   end
 
   @impl true

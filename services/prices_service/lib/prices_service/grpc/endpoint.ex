@@ -1,0 +1,6 @@
+defmodule PricesService.Grpc.Endpoint do
+  use GRPC.Endpoint
+
+  intercept GRPC.Server.Interceptors.Logger
+  run PricesService.Grpc.Server
+end

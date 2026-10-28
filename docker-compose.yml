@@ -30,6 +30,8 @@ services:
 
   exchanges_service:
     build: ./services/exchanges_service
+    ports:
+      - "50051:50051"
     environment:
       DB_HOST: postgres
       DB_USER: ${POSTGRES_USER}
@@ -37,6 +39,7 @@ services:
       DB_NAME: exchanges_db
       DB_PORT: 5432
       PORT: 4001
+      GRPC_PORT: 50051
       SECRET_KEY_BASE: ${SECRET_KEY_BASE}
       CONSUL_HOST: consul
       CONSUL_PORT: 8500
@@ -51,6 +54,8 @@ services:
 
   prices_service:
     build: ./services/prices_service
+    ports:
+      - "50052:50052"
     environment:
       DB_HOST: postgres
       DB_USER: ${POSTGRES_USER}
@@ -58,6 +63,9 @@ services:
       DB_NAME: prices_db
       DB_PORT: 5432
       PORT: 4002
+      GRPC_PORT: 50052
+      EXCHANGES_GRPC_HOST: exchanges_service
+      EXCHANGES_GRPC_PORT: 50051
       SECRET_KEY_BASE: ${SECRET_KEY_BASE}
       CONSUL_HOST: consul
       CONSUL_PORT: 8500
@@ -72,6 +80,8 @@ services:
 
   operations_service:
     build: ./services/operations_service
+    ports:
+      - "50053:50053"
     environment:
       DB_HOST: postgres
       DB_USER: ${POSTGRES_USER}
@@ -79,6 +89,11 @@ services:
       DB_NAME: operations_db
       DB_PORT: 5432
       PORT: 4003
+      GRPC_PORT: 50053
+      EXCHANGES_GRPC_HOST: exchanges_service
+      EXCHANGES_GRPC_PORT: 50051
+      PRICES_GRPC_HOST: prices_service
+      PRICES_GRPC_PORT: 50052
       SECRET_KEY_BASE: ${SECRET_KEY_BASE}
       CONSUL_HOST: consul
       CONSUL_PORT: 8500
@@ -93,8 +108,14 @@ services:
 
   middleware1:
     build: ./middleware
+    ports:
+      - "50050:50050"
     environment:
       PORT: 4000
+      GRPC_PORT: 50050
+      EXCHANGES_GRPC_INSTANCES: exchanges_service:50051
+      PRICES_GRPC_INSTANCES: prices_service:50052
+      OPERATIONS_GRPC_INSTANCES: operations_service:50053
       SERVICES_FILE: /app/services.json
       CONSUL_HOST: consul
       CONSUL_PORT: 8500
@@ -112,6 +133,10 @@ services:
     build: ./middleware
     environment:
       PORT: 4000
+      GRPC_PORT: 50050
+      EXCHANGES_GRPC_INSTANCES: exchanges_service:50051
+      PRICES_GRPC_INSTANCES: prices_service:50052
+      OPERATIONS_GRPC_INSTANCES: operations_service:50053
       SERVICES_FILE: /app/services.json
       CONSUL_HOST: consul
       CONSUL_PORT: 8500

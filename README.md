@@ -114,7 +114,7 @@ Tabla: `operations` (simbolo, tipo, cantidad, precio, total).
 
 ### Service discovery
 
-El middleware no tiene las direcciones de los tres servicios de backend escritas en el codigo. Las lee de un archivo estatico, `middleware/services.json`:
+El middleware obtiene las instancias saludables desde Consul (`/v1/health/service/<servicio>?passing=true`). Los servicios se registran al iniciar y publican un health check HTTP. El middleware conserva una cache local con TTL de 3 segundos y sirve valores stale si Consul deja de responder. `middleware/services.json` es solo el fallback cuando Consul no esta disponible o no hay instancias saludables:
 
 ```json
 {
@@ -124,14 +124,16 @@ El middleware no tiene las direcciones de los tres servicios de backend escritas
 }
 ```
 
-Cada clave puede tener una o varias direcciones. Al iniciar, el middleware carga este archivo en memoria (modulo `Middleware.Discovery`, un `GenServer`).
+Cada clave puede tener una o varias direcciones HTTP. El archivo no se carga como fuente primaria al iniciar; `Middleware.Discovery` lo consulta bajo demanda solo como fallback.
 
 ### Balanceo de carga
 
 Hay balanceo de carga en dos niveles:
 
 1. **Nginx (`loadbalancer/`)**: hace round robin entre dos instancias identicas del middleware (`middleware1` y `middleware2`). Es el punto de entrada de todas las peticiones de la API, en el puerto 8080.
-2. **Middleware (`Middleware.Discovery`)**: cuando una direccion en `services.json` tiene mas de un elemento, el middleware tambien reparte las peticiones entre ellas en round robin (mismo mecanismo: un contador por servicio que avanza en cada peticion).
+2. **Middleware (`Middleware.Grpc.Client`)**: el gateway usa round robin sobre las instancias gRPC indicadas por `EXCHANGES_GRPC_INSTANCES`, `PRICES_GRPC_INSTANCES` y `OPERATIONS_GRPC_INSTANCES`. Si una llamada falla al conectar, intenta la siguiente instancia configurada. En Compose cada variable contiene una instancia por servicio.
+
+`Middleware.Discovery` aplica round robin a las direcciones HTTP del archivo fallback. Esta ruta se usa para los paths que no tienen un RPC gRPC dedicado; no es el mecanismo de descubrimiento para las llamadas gRPC conocidas.
 
 ### Enrutamiento del middleware
 
@@ -145,7 +147,7 @@ El middleware (`Middleware.Router`, un `Plug.Router`) mira el path de la peticio
 | `/api/operations*`     | operations_service   |
 | `/api/portfolio*`      | operations_service   |
 
-Para reenviar la peticion usa el cliente HTTP incluido en Erlang (`:httpc`), sin depender de una libreria externa.
+Para las rutas conocidas, el middleware invoca el RPC gRPC correspondiente. Las rutas no cubiertas por esos RPC conservan el reenvio HTTP mediante `:httpc` como fallback.
 
 ## 6. Flujo completo de una peticion
 
@@ -153,8 +155,8 @@ Ejemplo: el usuario hace clic en "Comprar" en el frontend.
 
 1. **Frontend**: React arma un `POST` a `http://localhost:8080/api/operations` con `{symbol, operation_type, quantity, price}`.
 2. **Load balancer (Nginx, puerto 8080)**: recibe la peticion y la manda, por round robin, a `middleware1` o `middleware2`.
-3. **Middleware**: identifica que el path empieza con `/api/operations`, busca en `services.json` la direccion de `operations_service` (con round robin si hay varias) y reenvia la peticion tal cual.
-4. **operations_service**: el `OperationController` recibe la peticion, llama a `OperationsService.Trading.create_operation/1`, que calcula el total y valida los datos con un changeset de Ecto.
+3. **Middleware**: identifica `/api/operations` y convierte la peticion HTTP en `Operations.CreateOperation`; el cliente gRPC conecta con `operations_service`.
+4. **operations_service**: valida el simbolo consultando `exchanges_service` por gRPC, obtiene el precio de `prices_service` si la peticion no lo incluye y llama a `OperationsService.Trading.create_operation/1`.
 5. **Base de datos**: `Trading` usa `OperationsService.Repo` para insertar la fila en la tabla `operations` de `operations_db` (PostgreSQL).
 6. La respuesta (JSON con la operacion creada) regresa por el mismo camino: servicio -> middleware -> load balancer -> frontend, que actualiza la tabla de operaciones y el portafolio en pantalla.
 
@@ -216,3 +218,85 @@ docker compose up --build <servicio>
 
 **Puerto ocupado (3000, 8080 o 5432).**
 Cambia el mapeo de puertos en `docker-compose.yml` (por ejemplo `"3001:80"`) o libera el puerto que ya esta en uso en tu maquina.
+
+## 9. gRPC, Protobuf y mensajeria GenStage
+
+### Contratos y flujo gRPC
+
+Los contratos estan en `proto/` y los modulos protobuf usados para compilar estan versionados bajo `lib/*/proto/` en cada aplicacion. Cada servicio escucha gRPC sin TLS en el puerto interno `50051`, `50052` o `50053`. El middleware actua como gateway gRPC en `50050` y como gateway REST en `4000`; Nginx balancea las peticiones HTTP externas de `8080` entre las dos instancias del middleware. La ruta gRPC hacia los servicios es middleware -> servicio; Nginx no termina ni balancea HTTP/2 gRPC.
+
+`operations_service` llama a `exchanges_service` para validar acciones y a `prices_service` cuando una operacion no incluye precio. Los RPC conocidos de REST tambien atraviesan el middleware y se traducen a gRPC; las rutas REST no implementadas por esos RPC usan el proxy HTTP de fallback.
+
+| Contrato | RPC |
+|---|---|
+| `exchanges.ExchangesService` | `ListExchanges`, `ListStocks`, `ListStocksByExchange`, `GetStock` |
+| `prices.PricesService` | `ListPrices`, `GetPrice`, `FluctuatePrices` |
+| `operations.OperationsService` | `ListOperations`, `CreateOperation`, `GetPortfolio` |
+
+### Mensajeria asíncrona
+
+La alternativa elegida es `GenStage`, ya incluido como dependencia en las cuatro aplicaciones. Cada aplicacion mantiene sus propios productores y consumidores locales; no es un broker distribuido entre nodos y los mensajes no sobreviven al reinicio del proceso.
+
+| Aplicacion | Topico de eventos | Cola de fallos |
+|---|---|---|
+| `middleware` | `middleware_events` | `dead_letter` |
+| `exchanges_service` | `exchanges_events` | `dead_letter` |
+| `prices_service` | `prices_events` | `dead_letter` |
+| `operations_service` | `operations_events` | `dead_letter` |
+
+Los handlers gRPC publican consultas de acciones, fluctuaciones y operaciones. El simulador tambien publica un evento de precios cada cinco segundos. Los consumidores reciben demanda entre 1 y 10 mensajes por lote; cada productor conserva como maximo 1,000 mensajes pendientes. Una publicacion llena devuelve `{:error, :overloaded}` y el mensaje rechazado se conserva en la DLQ ETS del proceso. Un handler fallido se reintenta hasta completar tres intentos totales; despues se publica en `dead_letter` y queda visible mediante `DeadLetterQueue.list_messages/0`. La DLQ es memoria local y se pierde al reiniciar.
+
+### Pruebas con grpcurl
+
+Desde la raiz del proyecto, levanta el stack y espera a que Postgres y los servicios esten healthy:
+
+```bash
+docker compose up --build -d
+```
+
+Los comandos siguientes llaman al gateway gRPC del middleware, publicado en `localhost:50050`. Requieren `grpcurl` instalado. En una base recien creada, los seeds incluyen ocho acciones, ocho precios y dos operaciones. El simulador cambia los precios cada cinco segundos, por lo que su valor y marca de tiempo pueden variar.
+
+**Exchanges**
+
+```bash
+grpcurl -plaintext -import-path ./proto -proto exchanges.proto -d '{}' localhost:50050 exchanges.ExchangesService/ListExchanges
+grpcurl -plaintext -import-path ./proto -proto exchanges.proto -d '{}' localhost:50050 exchanges.ExchangesService/ListStocks
+grpcurl -plaintext -import-path ./proto -proto exchanges.proto -d '{"exchangeId":2}' localhost:50050 exchanges.ExchangesService/ListStocksByExchange
+grpcurl -plaintext -import-path ./proto -proto exchanges.proto -d '{"symbol":"AAPL"}' localhost:50050 exchanges.ExchangesService/GetStock
+```
+
+Respuestas esperadas: `ListExchanges` contiene `NYSE`, `NASDAQ` y `BMV`; `ListStocks` devuelve ocho acciones; `ListStocksByExchange` para el id `2` devuelve `AAPL`, `MSFT` y `GOOGL`; `GetStock` devuelve la accion `AAPL`. Ejemplo de respuesta individual:
+
+```json
+{"stock":{"id":"1","symbol":"AAPL","name":"Apple Inc.","exchangeId":"2"}}
+```
+
+**Prices**
+
+```bash
+grpcurl -plaintext -import-path ./proto -proto prices.proto -d '{}' localhost:50050 prices.PricesService/ListPrices
+grpcurl -plaintext -import-path ./proto -proto prices.proto -d '{"symbol":"AAPL"}' localhost:50050 prices.PricesService/GetPrice
+grpcurl -plaintext -import-path ./proto -proto prices.proto -d '{}' localhost:50050 prices.PricesService/FluctuatePrices
+```
+
+Respuestas esperadas: `ListPrices` contiene ocho precios; `GetPrice` devuelve el precio actual de `AAPL`; `FluctuatePrices` devuelve `{"updatedCount":8}`. Ejemplo de `GetPrice` (el precio puede variar):
+
+```json
+{"price":{"id":"1","symbol":"AAPL","price":"227.50","updatedAt":"2026-10-28T12:00:00Z"}}
+```
+
+**Operations**
+
+```bash
+grpcurl -plaintext -import-path ./proto -proto operations.proto -d '{}' localhost:50050 operations.OperationsService/ListOperations
+grpcurl -plaintext -import-path ./proto -proto operations.proto -d '{"symbol":"AAPL","operationType":"buy","quantity":2,"price":"227.50"}' localhost:50050 operations.OperationsService/CreateOperation
+grpcurl -plaintext -import-path ./proto -proto operations.proto -d '{}' localhost:50050 operations.OperationsService/GetPortfolio
+```
+
+En una base recien creada, `ListOperations` devuelve las dos operaciones semilla. `CreateOperation` debe devolver una compra AAPL con cantidad `2`, precio `227.50` y total `455.00`; el id y la fecha dependen de la base. Ejecuta `GetPortfolio` despues de `CreateOperation`: AAPL debe pasar a cantidad `12` e inversion neta `2730.00`; MSFT permanece en cantidad `5` e inversion `2076.00`. Ejemplo de respuesta de `CreateOperation`:
+
+```json
+{"operation":{"id":"3","symbol":"AAPL","operationType":"buy","quantity":2,"price":"227.50","total":"455.00","insertedAt":"2026-10-28T12:00:00Z"}}
+```
+
+Para llamar directamente a un servicio en lugar del gateway, sustituye `localhost:50050` por `localhost:50051` para exchanges, `localhost:50052` para prices o `localhost:50053` para operations. El stack no estaba activo al preparar esta seccion; los comandos y respuestas esperadas quedan documentados, pero no se ejecutaron contra servicios vivos.

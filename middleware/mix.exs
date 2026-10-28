@@ -22,7 +22,11 @@ defmodule Middleware.MixProject do
     [
       {:plug_cowboy, "~> 2.7"},
       {:jason, "~> 1.4"},
-      {:req, "~> 0.5"}
+      {:req, "~> 0.5"},
+      {:grpc, "~> 0.9.0"},
+      {:protobuf, "~> 0.12"},
+      {:cowlib, "~> 2.13", override: true},
+      {:gen_stage, "~> 1.2"}
     ]
   end
 end

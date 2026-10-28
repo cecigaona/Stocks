@@ -1,26 +1,4 @@
 defmodule ExchangesService.Consul.Registrar do
-  @moduledoc """
-  GenServer encargado de registrar y desregistrar la instancia del servicio
-  en el Service Catalog de HashiCorp Consul mediante su API HTTP.
-
-  ## Características de resiliencia y diseño OTP
-  - Registro asíncrono con `{:continue, :register}` para no bloquear el árbol de supervisión.
-  - Reintentos con backoff exponencial mediante `Process.send_after/3` (sin llamadas bloqueantes `Process.sleep/1`).
-  - Desregistro limpio atrapando señales con `Process.flag(:trap_exit, true)` en el callback `terminate/2`.
-  - Configuración de `DeregisterCriticalServiceAfter` en Consul para depuración automática
-    de instancias muertas ante caídas abruptas (SIGKILL, fallo de hardware, partición de red).
-
-  ## Justificación: HTTP Check vs TTL Check
-  Se eligió un chequeo de tipo HTTP (`GET /health`) en lugar de TTL (heartbeat push) por:
-  1. Modelo Pull vs Push: Con HTTP check, Consul sondea activamente el servicio y su estado real
-     (incluyendo conectividad a la base de datos PostgreSQL y disponibilidad del pool de conexiones).
-     Un TTL check envía un latido ciego que podría seguir reportando "vivo" incluso si el servidor web
-     o la base de datos están colapsados o bloqueados.
-  2. Verificación de conectividad real: Garantiza que el servidor HTTP (Phoenix/Cowboy) puede recibir
-     y procesar peticiones en el puerto asignado a través de la red compartida de Docker.
-  3. Desacoplamiento: No sobrecarga al servicio con temporizadores de heartbeat continuos hacia Consul.
-  """
-
   use GenServer
   require Logger
 
@@ -45,7 +23,6 @@ defmodule ExchangesService.Consul.Registrar do
     :http_client
   ]
 
-
   def start_link(opts \\ []) do
     case Keyword.get(opts, :name, __MODULE__) do
       nil -> GenServer.start_link(__MODULE__, opts)
@@ -53,11 +30,9 @@ defmodule ExchangesService.Consul.Registrar do
     end
   end
 
-  @doc "Devuelve true si el servicio está registrado activamente en Consul."
   def registered?(server \\ __MODULE__) do
     GenServer.call(server, :registered?)
   end
-
 
   @impl true
   def init(opts) do
@@ -135,20 +110,27 @@ defmodule ExchangesService.Consul.Registrar do
 
   @impl true
   def terminate(reason, %{registered: true} = state) do
-    Logger.info("[Consul.Registrar] Apagado limpio detectado (motivo: #{inspect(reason)}). Desregistrando #{state.service_id} de Consul...")
+    Logger.info(
+      "[Consul.Registrar] Apagado limpio detectado (motivo: #{inspect(reason)}). Desregistrando #{state.service_id} de Consul..."
+    )
+
     deregister_service(state)
     :ok
   end
 
   def terminate(_reason, _state), do: :ok
 
-
   defp attempt_registration(state) do
-    Logger.info("[Consul.Registrar] Registrando #{state.service_id} en Consul (#{state.consul_url})...")
+    Logger.info(
+      "[Consul.Registrar] Registrando #{state.service_id} en Consul (#{state.consul_url})..."
+    )
 
     case register_service(state) do
       {:ok, _status} ->
-        Logger.info("[Consul.Registrar] ¡Servicio #{state.service_id} registrado exitosamente en Consul!")
+        Logger.info(
+          "[Consul.Registrar] ¡Servicio #{state.service_id} registrado exitosamente en Consul!"
+        )
+
         %{state | registered: true, current_delay_ms: @default_initial_delay_ms}
 
       {:error, reason} ->
@@ -203,7 +185,10 @@ defmodule ExchangesService.Consul.Registrar do
         {:ok, status}
 
       {:ok, %{status: status, body: body}} ->
-        Logger.error("[Consul.Registrar] Error al desregistrar: HTTP #{status} - #{inspect(body)}")
+        Logger.error(
+          "[Consul.Registrar] Error al desregistrar: HTTP #{status} - #{inspect(body)}"
+        )
+
         {:error, {:http_error, status, body}}
 
       {:error, reason} ->

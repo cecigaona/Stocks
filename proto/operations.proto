@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+package operations;
+
+message Empty {}
+
+message Operation {
+  int64 id = 1;
+  string symbol = 2;
+  string operation_type = 3;
+  int32 quantity = 4;
+  string price = 5;
+  string total = 6;
+  string inserted_at = 7;
+}
+
+message PortfolioItem {
+  string symbol = 1;
+  int32 quantity = 2;
+  string net_invested = 3;
+}
+
+message ListOperationsResponse {
+  repeated Operation operations = 1;
+}
+
+message CreateOperationRequest {
+  string symbol = 1;
+  string operation_type = 2;
+  int32 quantity = 3;
+  string price = 4;
+}
+
+message OperationResponse {
+  Operation operation = 1;
+}
+
+message PortfolioResponse {
+  repeated PortfolioItem items = 1;
+}
+
+service OperationsService {
+  rpc ListOperations (Empty) returns (ListOperationsResponse);
+  rpc CreateOperation (CreateOperationRequest) returns (OperationResponse);
+  rpc GetPortfolio (Empty) returns (PortfolioResponse);
+}

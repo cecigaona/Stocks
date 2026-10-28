@@ -1,0 +1,47 @@
+syntax = "proto3";
+
+package exchanges;
+
+message Empty {}
+
+message Exchange {
+  int64 id = 1;
+  string name = 2;
+  string code = 3;
+}
+
+message Stock {
+  int64 id = 1;
+  string symbol = 2;
+  string name = 3;
+  int64 exchange_id = 4;
+}
+
+message ListExchangesResponse {
+  repeated Exchange exchanges = 1;
+}
+
+message ListStocksRequest {}
+
+message ListStocksResponse {
+  repeated Stock stocks = 1;
+}
+
+message ListStocksByExchangeRequest {
+  int64 exchange_id = 1;
+}
+
+message GetStockRequest {
+  string symbol = 1;
+}
+
+message StockResponse {
+  Stock stock = 1;
+}
+
+service ExchangesService {
+  rpc ListExchanges (Empty) returns (ListExchangesResponse);
+  rpc ListStocks (ListStocksRequest) returns (ListStocksResponse);
+  rpc ListStocksByExchange (ListStocksByExchangeRequest) returns (ListStocksResponse);
+  rpc GetStock (GetStockRequest) returns (StockResponse);
+}

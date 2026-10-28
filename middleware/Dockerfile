@@ -6,13 +6,15 @@ WORKDIR /app
 
 RUN mix local.hex --force && mix local.rebar --force
 
-COPY mix.exs ./
+ENV HEX_HTTP_TIMEOUT=120
+
+COPY mix.exs mix.lock* ./
 RUN mix deps.get
 
 COPY . .
 
 RUN mix deps.compile
 
-EXPOSE 4000
+EXPOSE 4000 50050
 
 CMD ["mix", "run", "--no-halt"]

@@ -11,6 +11,15 @@ defmodule OperationsServiceWeb.OperationController do
   def create(conn, params) do
     case Trading.create_operation(params) do
       {:ok, operation} ->
+        OperationsService.Messaging.Topic.publish(:operations_events, {:operation_created, %{
+          id: operation.id,
+          symbol: operation.symbol,
+          operation_type: operation.operation_type,
+          quantity: operation.quantity,
+          price: Decimal.to_string(operation.price),
+          total: Decimal.to_string(operation.total)
+        }})
+
         conn
         |> put_status(:created)
         |> json(operation_json(operation))

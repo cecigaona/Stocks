@@ -17,7 +17,8 @@ defmodule PricesService.Simulator do
 
   @impl true
   def handle_info(:tick, state) do
-    Prices.fluctuate_all()
+    updated = Prices.fluctuate_all()
+    PricesService.Messaging.Topic.publish(:prices_events, {:simulator_tick, %{count: length(updated)}})
     schedule_tick()
     {:noreply, state}
   end
